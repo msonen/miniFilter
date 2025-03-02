@@ -3,9 +3,6 @@
 
 #pragma comment(lib, "fltmgr.lib")
 
-#define DRIVER_TAG 'FMon'
-#define FILTER_ALTITUDE L"370050"  // Temporary test altitude (range 360000-389999 for file system tests)
-
 typedef struct _DRIVER_CONTEXT {
     UNICODE_STRING MonitorPath;
 } DRIVER_CONTEXT, * PDRIVER_CONTEXT;
@@ -23,7 +20,7 @@ PreOperationCallback(
     UNREFERENCED_PARAMETER(FltObjects);
     UNREFERENCED_PARAMETER(CompletionContext);
 
-    DbgPrint("PreOperationCallback called\n");
+    //DbgPrint("PreOperationCallback called\n");
     PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
     NTSTATUS status;
 
@@ -102,7 +99,6 @@ DriverEntry(
 )
 {
     NTSTATUS status;
-    UNICODE_STRING altitude;
 
     DbgPrint("DriverEntry: Starting\n");
     UNREFERENCED_PARAMETER(RegistryPath);
@@ -110,7 +106,6 @@ DriverEntry(
     RtlInitUnicodeString(&gDriverContext.MonitorPath, L"\\??\\C:\\Test");
     DbgPrint("Monitoring path: %wZ\n", &gDriverContext.MonitorPath);
 
-    RtlInitUnicodeString(&altitude, FILTER_ALTITUDE);
     status = FltRegisterFilter(DriverObject, &FilterRegistration, &gFilterHandle);
     if (!NT_SUCCESS(status)) {
         DbgPrint("FltRegisterFilter failed: 0x%08x\n", status);
