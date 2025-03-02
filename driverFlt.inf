@@ -1,5 +1,5 @@
 ;
-; dirWatcher.inf
+; driverFlt.inf
 ;
 
 [Version]
@@ -8,12 +8,12 @@ Class       = "ActivityMonitor" ; TODO: specify appropriate Class
 ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2} ; TODO: specify appropriate ClassGuid
 Provider    = %ProviderString%
 DriverVer   = 01/03/2025,1.0.0.1
-CatalogFile = dirWatcher.cat
+CatalogFile = driverFlt.cat
 DriverVer   = ; TODO: set DriverVer in stampinf property pages
 PnpLockdown = 1
 
 [SourceDisksFiles]
-dirWatcher.sys = 1,,
+driverFlt.sys = 1,,
 
 [SourceDisksNames]
 1 = %DiskId1%,,,
@@ -115,13 +115,13 @@ HKR,"Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
 [Strings]
 ProviderString          = "TODO-Set-Provider"
 ServiceDescription      = "Delete Notification Mini-Filter Driver"
-ServiceName             = "dirWatcher"
-DriverName              = "dirWatcher"
-DiskId1                 = "dirWatcher Device Installation Disk"
+ServiceName             = "driverFlt"
+DriverName              = "driverFlt"
+DiskId1                 = "driverFlt Device Installation Disk"
 
 ;Instances specific information.
-DefaultInstance         = "dirWatcher Instance"
-Instance1.Name          = "dirWatcher Instance"
+DefaultInstance         = "driverFlt Instance"
+Instance1.Name          = "driverFlt Instance"
 Instance1.Altitude      = "370150"
 Instance1.Flags         = 0x0              ; Allow all attachments
 

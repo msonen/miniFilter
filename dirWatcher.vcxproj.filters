@@ -19,7 +19,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="dirWatcher.inf">
+    <Inf Include="driverFlt.inf">
       <Filter>Driver Files</Filter>
     </Inf>
   </ItemGroup>
