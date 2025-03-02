@@ -5,6 +5,15 @@
 
 #pragma comment(lib, "fltmgr.lib")
 
+//#define DEBUG_MODE
+#ifdef DEBUG_MODE
+#define DEBUG(...)    DbgPrint(__VA_ARGS__)
+#else
+#define DEBUG(...)
+#endif
+
+#define LOG(...)    DbgPrint(__VA_ARGS__)
+
 
 static PFLT_FILTER gFilterHandle = NULL;
 static TRACKED_FILES TrackedFiles;
@@ -39,7 +48,7 @@ PostOperationCallback(
     BOOLEAN fileMatches = GetTrackedFile(&TrackedFiles, &filePath, NULL);
 
     if (!fileMatches) {
-        DbgPrint("FileLogger: %wZ is not being tracked.\n", &nameInfo->Name);
+        DEBUG("FileLogger: %wZ is not being tracked.\n", &nameInfo->Name);
         FltReleaseFileNameInformation(nameInfo);
         return FLT_POSTOP_FINISHED_PROCESSING;
     }
@@ -48,7 +57,7 @@ PostOperationCallback(
         dispInfo = Data->Iopb->Parameters.SetFileInformation.InfoBuffer;
 
         if (dispInfo && dispInfo->DeleteFile) {
-            DbgPrint("FileLogger: File deleted - %wZ\n", &nameInfo->Name);
+            LOG("FileLogger: File deleted - %wZ\n", &nameInfo->Name);
         }
     }
 
@@ -66,8 +75,8 @@ preOperationCallback(
     UNREFERENCED_PARAMETER(FltObjects);
     UNREFERENCED_PARAMETER(CompletionContext);
 
-    //DbgPrint("PostOperationCallback - MajorFunction: 0x%x, Status: 0x%08x\n",
-        //Data->Iopb->MajorFunction, Data->IoStatus.Status);
+    DEBUG("PostOperationCallback - MajorFunction: 0x%x, Status: 0x%08x\n",
+        Data->Iopb->MajorFunction, Data->IoStatus.Status);
 
     PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
     NTSTATUS status;
@@ -75,7 +84,7 @@ preOperationCallback(
     // Safely get the file name
     status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
     if (!NT_SUCCESS(status)) {
-        //DbgPrint("FltGetFileNameInformation failed: 0x%08x\n", status);
+        DEBUG("FltGetFileNameInformation failed: 0x%08x\n", status);
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
@@ -84,8 +93,7 @@ preOperationCallback(
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
-    DbgPrint("File: %wZ\n", &nameInfo->Name);
-
+    DEBUG("File: %wZ\n", &nameInfo->Name);
 
     FltReleaseFileNameInformation(nameInfo);
     return FLT_PREOP_SUCCESS_NO_CALLBACK;
@@ -106,12 +114,12 @@ FilterUnload(
 )
 {
     UNREFERENCED_PARAMETER(Flags);
-    DbgPrint("FilterUnload called\n");
+    DEBUG("FilterUnload called\n");
     CleanupTrackedFiles(&TrackedFiles);
     if (gFilterHandle) {
         FltUnregisterFilter(gFilterHandle);
         gFilterHandle = NULL;
-        DbgPrint("Filter unregistered\n");
+        LOG("Filter unregistered\n");
     }
     return STATUS_SUCCESS;
 }
@@ -127,7 +135,7 @@ InstanceSetup(
     UNREFERENCED_PARAMETER(FltObjects);
     UNREFERENCED_PARAMETER(Flags);
     UNREFERENCED_PARAMETER(VolumeDeviceType);
-    DbgPrint("InstanceSetup called - FsType: %d\n", VolumeFilesystemType);
+    DEBUG("InstanceSetup called - FsType: %d\n", VolumeFilesystemType);
     if (VolumeFilesystemType == FLT_FSTYPE_NTFS) {
         return STATUS_SUCCESS;
     }
@@ -164,12 +172,12 @@ DriverEntry(
 {
     NTSTATUS status;
 
-    DbgPrint("DriverEntry: Starting\n");
+    DEBUG("DriverEntry: Starting\n");
     UNREFERENCED_PARAMETER(RegistryPath);
 
     status = InitializeTrackedFiles(&TrackedFiles);
     if (!NT_SUCCESS(status)) {
-        DbgPrint("InitializeTrackedFiles failed: 0x%08x\n", status);
+        DEBUG("InitializeTrackedFiles failed: 0x%08x\n", status);
         return status;
     }
     
@@ -177,26 +185,26 @@ DriverEntry(
         status = AddTrackedFile(&TrackedFiles, _filelist_builtin[i]);
 
         if (!NT_SUCCESS(status)) {
-            DbgPrint("AddTrackedFile failed: 0x%08x\n", status);
+            DEBUG("AddTrackedFile failed: 0x%08x\n", status);
             return status;
         }
     }
 
     status = FltRegisterFilter(DriverObject, &FilterRegistration, &gFilterHandle);
     if (!NT_SUCCESS(status)) {
-        DbgPrint("FltRegisterFilter failed: 0x%08x\n", status);
+        DEBUG("FltRegisterFilter failed: 0x%08x\n", status);
         return status;
     }
-    DbgPrint("Filter registered\n");
+    DEBUG("Filter registered\n");
 
     status = FltStartFiltering(gFilterHandle);
     if (!NT_SUCCESS(status)) {
-        DbgPrint("FltStartFiltering failed: 0x%08x\n", status);
+        DEBUG("FltStartFiltering failed: 0x%08x\n", status);
         FltUnregisterFilter(gFilterHandle);
         gFilterHandle = NULL;
         return status;
     }
-    DbgPrint("Filter started\n");
+    LOG("Filter started\n");
 
     return STATUS_SUCCESS;
 }
