@@ -2,7 +2,7 @@
 #include <dontuse.h>
 #include <ntstrsafe.h>
 #include "fileList.h"
-
+#include "userApi.h"
 
 #pragma comment(lib, "fltmgr.lib")
 
@@ -17,7 +17,8 @@
 
 
 static PFLT_FILTER gFilterHandle = NULL;
-static TRACKED_FILES TrackedFiles;
+TRACKED_FILES TrackedFiles;
+static PDEVICE_OBJECT gDeviceObject = NULL;
 
 static VOID LogDeletion(PUNICODE_STRING name) {
     PEPROCESS process = PsGetCurrentProcess();
@@ -202,6 +203,25 @@ const FLT_REGISTRATION FilterRegistration = {
     NULL
 };
 
+
+// Driver unload routine
+VOID DriverUnload(
+    _In_ PDRIVER_OBJECT DriverObject
+)
+{
+    UNREFERENCED_PARAMETER(DriverObject);
+    UNICODE_STRING symlinkName;
+    RtlInitUnicodeString(&symlinkName, SYMLINK_NAME);
+
+    IoDeleteSymbolicLink(&symlinkName);
+    if (gDeviceObject) {
+        IoDeleteDevice(gDeviceObject);
+    }
+
+    CleanupTrackedFiles(&TrackedFiles);
+}
+
+
 #define BUILTIN_TRACK_LIST      2
 static PCWSTR _filelist_builtin[BUILTIN_TRACK_LIST] =
 {
@@ -215,6 +235,8 @@ DriverEntry(
 )
 {
     NTSTATUS status;
+    UNICODE_STRING deviceName;
+    UNICODE_STRING symlinkName;
 
     DEBUG("DriverEntry: Starting\n");
     UNREFERENCED_PARAMETER(RegistryPath);
@@ -233,6 +255,27 @@ DriverEntry(
             return status;
         }
     }
+
+    // Create device object
+    RtlInitUnicodeString(&deviceName, DEVICE_NAME);
+    status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, 0, FALSE, &gDeviceObject);
+    if (!NT_SUCCESS(status)) {
+        CleanupTrackedFiles(&TrackedFiles);
+        return status;
+    }
+
+    // Create symbolic link
+    RtlInitUnicodeString(&symlinkName, SYMLINK_NAME);
+    status = IoCreateSymbolicLink(&symlinkName, &deviceName);
+    if (!NT_SUCCESS(status)) {
+        IoDeleteDevice(gDeviceObject);
+        CleanupTrackedFiles(&TrackedFiles);
+        return status;
+    }
+
+    // Set up dispatch routines
+    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = IoctlAddFile;
+    DriverObject->DriverUnload = DriverUnload;
 
     status = FltRegisterFilter(DriverObject, &FilterRegistration, &gFilterHandle);
     if (!NT_SUCCESS(status)) {
