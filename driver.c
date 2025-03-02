@@ -3,45 +3,96 @@
 
 #pragma comment(lib, "fltmgr.lib")
 
-typedef struct _DRIVER_CONTEXT {
-    UNICODE_STRING MonitorPath;
-} DRIVER_CONTEXT, * PDRIVER_CONTEXT;
 
-DRIVER_CONTEXT gDriverContext;
-PFLT_FILTER gFilterHandle = NULL;  // Global filter handle for cleanup
+PFLT_FILTER gFilterHandle = NULL;
 
-FLT_PREOP_CALLBACK_STATUS
-PreOperationCallback(
+FLT_POSTOP_CALLBACK_STATUS
+PostOperationCallback(
     _Inout_ PFLT_CALLBACK_DATA Data,
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Out_ PVOID* CompletionContext
+    _In_opt_ PVOID CompletionContext,
+    _In_ FLT_POST_OPERATION_FLAGS Flags
+)
+{
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+    UNREFERENCED_PARAMETER(Flags);
+
+    //DbgPrint("PostOperationCallback - MajorFunction: 0x%x, Status: 0x%08x\n",
+        //Data->Iopb->MajorFunction, Data->IoStatus.Status);
+
+    PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+    NTSTATUS status;
+    PFILE_DISPOSITION_INFORMATION dispInfo;
+
+    // Safely get the file name
+    status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
+    if (!NT_SUCCESS(status)) {
+        //DbgPrint("FltGetFileNameInformation failed: 0x%08x\n", status);
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+    
+    if (!nameInfo->Name.Buffer || wcsstr(nameInfo->Name.Buffer, L"\\Test\\") == NULL) 
+    {
+        FltReleaseFileNameInformation(nameInfo);
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+    //DbgPrint("File: %wZ\n", &nameInfo->Name);
+
+    if (Data->Iopb->MajorFunction == IRP_MJ_SET_INFORMATION && NT_SUCCESS(Data->IoStatus.Status)) {
+        dispInfo = Data->Iopb->Parameters.SetFileInformation.InfoBuffer;
+
+        if (dispInfo && dispInfo->DeleteFile) {
+            DbgPrint("FileLogger: File deleted - %wZ\n", &nameInfo->Name);
+        }
+    }
+
+    FltReleaseFileNameInformation(nameInfo);
+    return FLT_POSTOP_FINISHED_PROCESSING;
+}
+
+FLT_PREOP_CALLBACK_STATUS
+preOperationCallback(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _In_opt_ PVOID CompletionContext
 )
 {
     UNREFERENCED_PARAMETER(FltObjects);
     UNREFERENCED_PARAMETER(CompletionContext);
 
-    //DbgPrint("PreOperationCallback called\n");
+    //DbgPrint("PostOperationCallback - MajorFunction: 0x%x, Status: 0x%08x\n",
+        //Data->Iopb->MajorFunction, Data->IoStatus.Status);
+
     PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
     NTSTATUS status;
 
-    status = FltGetFileNameInformation(Data, FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
+    // Safely get the file name
+    status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
     if (!NT_SUCCESS(status)) {
+        //DbgPrint("FltGetFileNameInformation failed: 0x%08x\n", status);
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
-    if ((Data->Iopb->MajorFunction == IRP_MJ_CREATE || Data->Iopb->MajorFunction == IRP_MJ_SET_INFORMATION) &&
-        RtlPrefixUnicodeString(&gDriverContext.MonitorPath, &nameInfo->Name, TRUE)) {
-        DbgPrint("File Operation - %wZ\n", &nameInfo->Name);
-        DbgPrint("Operation Type: %s\n", (Data->Iopb->MajorFunction == IRP_MJ_CREATE) ? "CREATE" : "DELETE");
+    if (!nameInfo->Name.Buffer || wcsstr(nameInfo->Name.Buffer, L"\\Test\\") == NULL) {
+        FltReleaseFileNameInformation(nameInfo);
+        return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
+
+    DbgPrint("File: %wZ\n", &nameInfo->Name);
+
 
     FltReleaseFileNameInformation(nameInfo);
     return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
+
+
 const FLT_OPERATION_REGISTRATION Callbacks[] = {
-    { IRP_MJ_CREATE, 0, PreOperationCallback, NULL },
-    { IRP_MJ_SET_INFORMATION, 0, PreOperationCallback, NULL },
+    //{ IRP_MJ_CREATE, 0, NULL, PostOperationCallback },
+    { IRP_MJ_SET_INFORMATION, 0, NULL, PostOperationCallback },
+    //{ IRP_MJ_CLEANUP, 0, NULL, PostOperationCallback },
     { IRP_MJ_OPERATION_END }
 };
 
@@ -59,6 +110,7 @@ FilterUnload(
     }
     return STATUS_SUCCESS;
 }
+
 NTSTATUS
 InstanceSetup(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
@@ -70,11 +122,12 @@ InstanceSetup(
     UNREFERENCED_PARAMETER(FltObjects);
     UNREFERENCED_PARAMETER(Flags);
     UNREFERENCED_PARAMETER(VolumeDeviceType);
-    UNREFERENCED_PARAMETER(VolumeFilesystemType);
-    DbgPrint("InstanceSetup called\n");
-    return STATUS_SUCCESS;
+    DbgPrint("InstanceSetup called - FsType: %d\n", VolumeFilesystemType);
+    if (VolumeFilesystemType == FLT_FSTYPE_NTFS) {
+        return STATUS_SUCCESS;
+    }
+    return STATUS_FLT_DO_NOT_ATTACH;
 }
-
 
 const FLT_REGISTRATION FilterRegistration = {
     sizeof(FLT_REGISTRATION),
@@ -92,6 +145,7 @@ const FLT_REGISTRATION FilterRegistration = {
     NULL
 };
 
+
 NTSTATUS
 DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
@@ -102,9 +156,6 @@ DriverEntry(
 
     DbgPrint("DriverEntry: Starting\n");
     UNREFERENCED_PARAMETER(RegistryPath);
-
-    RtlInitUnicodeString(&gDriverContext.MonitorPath, L"\\??\\C:\\Test");
-    DbgPrint("Monitoring path: %wZ\n", &gDriverContext.MonitorPath);
 
     status = FltRegisterFilter(DriverObject, &FilterRegistration, &gFilterHandle);
     if (!NT_SUCCESS(status)) {
