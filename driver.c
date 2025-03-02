@@ -1,5 +1,6 @@
 #include <fltKernel.h>
 #include <dontuse.h>
+#include <ntstrsafe.h>
 #include "fileList.h"
 
 
@@ -17,6 +18,49 @@
 
 static PFLT_FILTER gFilterHandle = NULL;
 static TRACKED_FILES TrackedFiles;
+
+static VOID LogDeletion(PUNICODE_STRING name) {
+    PEPROCESS process = PsGetCurrentProcess();
+    PUNICODE_STRING processName = NULL;
+    NTSTATUS status = SeLocateProcessImageName(process, &processName);
+    UNICODE_STRING defaultProcessName;
+    if (!NT_SUCCESS(status) || !processName) {
+        RtlInitUnicodeString(&defaultProcessName, L"Unknown Process");
+        processName = &defaultProcessName;
+    }
+
+    // Get current time
+    LARGE_INTEGER systemTime;
+    LARGE_INTEGER localTime;
+    TIME_FIELDS timeFields;
+    KeQuerySystemTime(&systemTime);
+    ExSystemTimeToLocalTime(&systemTime, &localTime);
+    RtlTimeToTimeFields(&localTime, &timeFields);
+
+    // Format datetime string (e.g., "2025-03-02 14:30:45")
+    WCHAR timeBuffer[64];
+    UNICODE_STRING timeString;
+    timeString.Buffer = timeBuffer;
+    timeString.MaximumLength = sizeof(timeBuffer);
+    status = RtlUnicodeStringPrintf(&timeString,
+        L"%04d-%02d-%02d %02d:%02d:%02d",
+        timeFields.Year, timeFields.Month, timeFields.Day,
+        timeFields.Hour, timeFields.Minute, timeFields.Second);
+    if (!NT_SUCCESS(status)) {
+        RtlInitUnicodeString(&timeString, L"Unknown Time");
+    }
+
+    // Log with process name, path, datetime, and operation
+    LOG("FileLogger: Operation=DELETE, Process=%wZ, Path=%wZ, DateTime=%wZ\n",
+        processName, name, &timeString);
+
+    // Free process name if it was allocated
+    if (processName != &defaultProcessName && processName->Buffer) {
+        ExFreePool(processName->Buffer);
+        ExFreePool(processName);
+    }
+
+}
 
 FLT_POSTOP_CALLBACK_STATUS
 PostOperationCallback(
@@ -57,7 +101,7 @@ PostOperationCallback(
         dispInfo = Data->Iopb->Parameters.SetFileInformation.InfoBuffer;
 
         if (dispInfo && dispInfo->DeleteFile) {
-            LOG("FileLogger: File deleted - %wZ\n", &nameInfo->Name);
+            LogDeletion(&nameInfo->Name);
         }
     }
 
