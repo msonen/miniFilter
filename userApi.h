@@ -10,3 +10,8 @@ NTSTATUS IoctlAddFile(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp
 );
+
+NTSTATUS IoctlCreateDispatch(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ PIRP Irp
+);

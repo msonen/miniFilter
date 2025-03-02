@@ -258,8 +258,10 @@ DriverEntry(
 
     // Create device object
     RtlInitUnicodeString(&deviceName, DEVICE_NAME);
-    status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, 0, FALSE, &gDeviceObject);
+    status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, 
+            FILE_DEVICE_SECURE_OPEN, FALSE, &gDeviceObject);
     if (!NT_SUCCESS(status)) {
+        LOG("FileTracker: Failed to create device: 0x%08x\n", status);
         CleanupTrackedFiles(&TrackedFiles);
         return status;
     }
@@ -268,12 +270,14 @@ DriverEntry(
     RtlInitUnicodeString(&symlinkName, SYMLINK_NAME);
     status = IoCreateSymbolicLink(&symlinkName, &deviceName);
     if (!NT_SUCCESS(status)) {
+        LOG("Failed to create symlink: 0x%08x\n", status);
         IoDeleteDevice(gDeviceObject);
         CleanupTrackedFiles(&TrackedFiles);
         return status;
     }
 
     // Set up dispatch routines
+    DriverObject->MajorFunction[IRP_MJ_CREATE] = IoctlCreateDispatch;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = IoctlAddFile;
     DriverObject->DriverUnload = DriverUnload;
 
