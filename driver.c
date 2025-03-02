@@ -1,10 +1,13 @@
 #include <fltKernel.h>
 #include <dontuse.h>
+#include "fileList.h"
+
 
 #pragma comment(lib, "fltmgr.lib")
 
 
-PFLT_FILTER gFilterHandle = NULL;
+static PFLT_FILTER gFilterHandle = NULL;
+static TRACKED_FILES TrackedFiles;
 
 FLT_POSTOP_CALLBACK_STATUS
 PostOperationCallback(
@@ -18,27 +21,28 @@ PostOperationCallback(
     UNREFERENCED_PARAMETER(CompletionContext);
     UNREFERENCED_PARAMETER(Flags);
 
-    //DbgPrint("PostOperationCallback - MajorFunction: 0x%x, Status: 0x%08x\n",
-        //Data->Iopb->MajorFunction, Data->IoStatus.Status);
-
     PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
     NTSTATUS status;
     PFILE_DISPOSITION_INFORMATION dispInfo;
 
-    // Safely get the file name
     status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
     if (!NT_SUCCESS(status)) {
-        //DbgPrint("FltGetFileNameInformation failed: 0x%08x\n", status);
         return FLT_POSTOP_FINISHED_PROCESSING;
     }
-    
-    if (!nameInfo->Name.Buffer || wcsstr(nameInfo->Name.Buffer, L"\\Test\\") == NULL) 
-    {
+
+    if (!nameInfo->Name.Buffer) {
         FltReleaseFileNameInformation(nameInfo);
         return FLT_POSTOP_FINISHED_PROCESSING;
     }
 
-    //DbgPrint("File: %wZ\n", &nameInfo->Name);
+    UNICODE_STRING filePath = nameInfo->Name;
+    BOOLEAN fileMatches = GetTrackedFile(&TrackedFiles, &filePath, NULL);
+
+    if (!fileMatches) {
+        DbgPrint("FileLogger: %wZ is not being tracked.\n", &nameInfo->Name);
+        FltReleaseFileNameInformation(nameInfo);
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
 
     if (Data->Iopb->MajorFunction == IRP_MJ_SET_INFORMATION && NT_SUCCESS(Data->IoStatus.Status)) {
         dispInfo = Data->Iopb->Parameters.SetFileInformation.InfoBuffer;
@@ -103,6 +107,7 @@ FilterUnload(
 {
     UNREFERENCED_PARAMETER(Flags);
     DbgPrint("FilterUnload called\n");
+    CleanupTrackedFiles(&TrackedFiles);
     if (gFilterHandle) {
         FltUnregisterFilter(gFilterHandle);
         gFilterHandle = NULL;
@@ -145,6 +150,11 @@ const FLT_REGISTRATION FilterRegistration = {
     NULL
 };
 
+#define BUILTIN_TRACK_LIST      2
+static PCWSTR _filelist_builtin[BUILTIN_TRACK_LIST] =
+{
+    L"\\Device\\HarddiskVolume3\\Test\\cmd.txt", L"\\Device\\HarddiskVolume3\\Test\\a.txt"
+};
 
 NTSTATUS
 DriverEntry(
@@ -156,6 +166,21 @@ DriverEntry(
 
     DbgPrint("DriverEntry: Starting\n");
     UNREFERENCED_PARAMETER(RegistryPath);
+
+    status = InitializeTrackedFiles(&TrackedFiles);
+    if (!NT_SUCCESS(status)) {
+        DbgPrint("InitializeTrackedFiles failed: 0x%08x\n", status);
+        return status;
+    }
+    
+    for (size_t i = 0; i < BUILTIN_TRACK_LIST; ++i) {
+        status = AddTrackedFile(&TrackedFiles, _filelist_builtin[i]);
+
+        if (!NT_SUCCESS(status)) {
+            DbgPrint("AddTrackedFile failed: 0x%08x\n", status);
+            return status;
+        }
+    }
 
     status = FltRegisterFilter(DriverObject, &FilterRegistration, &gFilterHandle);
     if (!NT_SUCCESS(status)) {
