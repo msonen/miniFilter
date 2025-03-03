@@ -259,7 +259,7 @@ DriverEntry(
     // Create device object
     RtlInitUnicodeString(&deviceName, DEVICE_NAME);
     status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, 
-            FILE_DEVICE_SECURE_OPEN, FALSE, &gDeviceObject);
+            0, FALSE, &gDeviceObject);
     if (!NT_SUCCESS(status)) {
         LOG("FileTracker: Failed to create device: 0x%08x\n", status);
         CleanupTrackedFiles(&TrackedFiles);
