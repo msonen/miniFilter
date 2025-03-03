@@ -20,22 +20,30 @@ NTSTATUS IoctlAddFile(
 
     if (irpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_ADD_TRACKED_FILE) {
         if (inputBuffer && inputBufferLength > 0 && inputBufferLength <= UNICODE_STRING_MAX_BYTES) {
-            // Convert user-mode wide string to UNICODE_STRING
             UNICODE_STRING userFilePath;
             RtlInitUnicodeString(&userFilePath, (PCWSTR)inputBuffer);
             if (userFilePath.Length > 0 && userFilePath.Length <= inputBufferLength) {
                 status = AddTrackedFile(&TrackedFiles, userFilePath.Buffer);
+                if (NT_SUCCESS(status)) {
+                    DbgPrint("FileTracker: Successfully added file %wZ\n", &userFilePath);
+                }
+                else {
+                    DbgPrint("FileTracker: Failed to add file %wZ, status: 0x%08x\n", &userFilePath, status);
+                }
             }
             else {
                 status = STATUS_INVALID_PARAMETER;
+                DbgPrint("FileTracker: Invalid parameter in IOCTL\n");
             }
         }
         else {
             status = STATUS_INVALID_PARAMETER;
+            DbgPrint("FileTracker: No input buffer or invalid length\n");
         }
     }
     else {
         status = STATUS_INVALID_DEVICE_REQUEST;
+        DbgPrint("FileTracker: Unknown IOCTL code\n");
     }
 
     Irp->IoStatus.Status = status;
