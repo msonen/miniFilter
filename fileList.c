@@ -49,6 +49,29 @@ NTSTATUS AddTrackedFile(PTRACKED_FILES TrackedFilesList, PCWSTR FilePath)
     return STATUS_SUCCESS;  // Success case
 }
 
+NTSTATUS RemoveTrackedFile(PTRACKED_FILES TrackedFilesList, PCWSTR FilePath) {
+    NTSTATUS status = STATUS_NOT_FOUND;
+    KIRQL oldIrql;
+    UNICODE_STRING fileToRemove;
+    RtlInitUnicodeString(&fileToRemove, FilePath);
+
+    KeAcquireSpinLock(&TrackedFilesList->Lock, &oldIrql);
+    PLIST_ENTRY entry = TrackedFilesList->FileListHead.Flink;
+    while (entry != &TrackedFilesList->FileListHead) {
+        PTRACKED_FILE_ENTRY fileEntry = CONTAINING_RECORD(entry, TRACKED_FILE_ENTRY, ListEntry);
+        if (RtlEqualUnicodeString(&fileToRemove, &fileEntry->FileName, TRUE)) {
+            RemoveEntryList(&fileEntry->ListEntry);
+            if (fileEntry->FileName.Buffer) ExFreePool(fileEntry->FileName.Buffer);
+            ExFreePool(fileEntry);
+            status = STATUS_SUCCESS;
+            break;
+        }
+        entry = entry->Flink;
+    }
+    KeReleaseSpinLock(&TrackedFilesList->Lock, oldIrql);
+    return status;
+}
+
 // Cleanup function (updated to use simpler ExFreePool)
 VOID CleanupTrackedFiles(PTRACKED_FILES TrackedFilesList)
 {

@@ -278,7 +278,7 @@ DriverEntry(
 
     // Set up dispatch routines
     DriverObject->MajorFunction[IRP_MJ_CREATE] = IoctlCreateDispatch;
-    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = IoctlAddFile;
+    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = IoctlControl;
     DriverObject->DriverUnload = DriverUnload;
 
     status = FltRegisterFilter(DriverObject, &FilterRegistration, &gFilterHandle);

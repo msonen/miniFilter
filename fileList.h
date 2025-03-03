@@ -17,6 +17,7 @@ typedef struct _TRACKED_FILES {
 
 NTSTATUS InitializeTrackedFiles(PTRACKED_FILES TrackedFilesList);
 NTSTATUS AddTrackedFile(PTRACKED_FILES TrackedFilesList, PCWSTR FileName);
+NTSTATUS RemoveTrackedFile(PTRACKED_FILES TrackedFilesList, PCWSTR FilePath);
 VOID CleanupTrackedFiles(PTRACKED_FILES TrackedFilesList);
 BOOLEAN GetTrackedFile(_In_ PTRACKED_FILES TrackedFilesList,
     _In_ PUNICODE_STRING FilePath,
