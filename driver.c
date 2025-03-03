@@ -18,7 +18,7 @@
 
 PFLT_FILTER gFilterHandle = NULL;
 TRACKED_FILES TrackedFiles;
-static PDEVICE_OBJECT gDeviceObject = NULL;
+PDEVICE_OBJECT gDeviceObject = NULL;
 
 static VOID LogDeletion(PUNICODE_STRING name) {
     PEPROCESS process = PsGetCurrentProcess();
@@ -212,14 +212,18 @@ VOID DriverUnload(
 {
     UNREFERENCED_PARAMETER(DriverObject);
     UNICODE_STRING symlinkName;
+    LOG("FileTracker: Driver unload routine.");
+    IoctlClear();
     RtlInitUnicodeString(&symlinkName, SYMLINK_NAME);
 
     IoDeleteSymbolicLink(&symlinkName);
+    LOG("FileTracker: Symbolic link removed.");
     if (gDeviceObject) {
         IoDeleteDevice(gDeviceObject);
     }
 
     CleanupTrackedFiles(&TrackedFiles);
+    LOG("FileTracker: Driver unloaded.");
 }
 
 
@@ -298,7 +302,7 @@ DriverEntry(
     }
     LOG("Filter started\n");
     
-    status = PortCreate();
+    status = IoctlInit();
     if (!NT_SUCCESS(status)) {
         DbgPrint("FileTracker: Failed to create comm port: 0x%08x\n", status);
         IoDeleteSymbolicLink(&symlinkName);

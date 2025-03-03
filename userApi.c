@@ -4,11 +4,82 @@
 #include "userApi.h"
 #include "fileList.h"
 
+#define MAX_MESSAGES 10 // Circular queue size
+
+#pragma pack(push, 1) // Ensure tight packing
+typedef struct _DELETE_MESSAGE {
+    ULONG MessageId;
+    WCHAR ProcessName[260];
+    WCHAR FilePath[260];
+    WCHAR DateTime[20];
+} DELETE_MESSAGE, * PDELETE_MESSAGE;
+#pragma pack(pop)
+
+
+// Circular queue for messages
+typedef struct _MESSAGE_QUEUE {
+    DELETE_MESSAGE Messages[MAX_MESSAGES];
+    ULONG Head; // Index of oldest message
+    ULONG Tail; // Index where next message goes
+    ULONG Count; // Number of messages in queue
+    KSPIN_LOCK Lock;
+} MESSAGE_QUEUE, * PMESSAGE_QUEUE;
 
 extern TRACKED_FILES TrackedFiles;
-extern PFLT_FILTER gFilterHandle;
-static PFLT_PORT gClientPort = NULL;
-static PFLT_PORT gServerPort = NULL;
+extern PDEVICE_OBJECT gDeviceObject;
+static MESSAGE_QUEUE MessageQueue;
+
+
+VOID InitializeMessageQueue(PMESSAGE_QUEUE Queue) {
+    RtlZeroMemory(Queue->Messages, sizeof(Queue->Messages));
+    Queue->Head = 0;
+    Queue->Tail = 0;
+    Queue->Count = 0;
+    KeInitializeSpinLock(&Queue->Lock);
+}
+
+NTSTATUS EnqueueMessage(PMESSAGE_QUEUE Queue, PDELETE_MESSAGE Message) {
+    KIRQL oldIrql;
+    NTSTATUS status;
+    KeAcquireSpinLock(&Queue->Lock, &oldIrql);
+
+    if (Queue->Count < MAX_MESSAGES) {
+        RtlCopyMemory(&Queue->Messages[Queue->Tail], Message, sizeof(DELETE_MESSAGE));
+        Queue->Tail = (Queue->Tail + 1) % MAX_MESSAGES;
+        Queue->Count++;
+        status = STATUS_SUCCESS;
+        DbgPrint("FileTracker: Enqueued message, count: %lu\n", Queue->Count);
+    }
+    else {
+        status = STATUS_INSUFFICIENT_RESOURCES;
+        DbgPrint("FileTracker: Queue full, message dropped\n");
+    }
+
+    KeReleaseSpinLock(&Queue->Lock, oldIrql);
+    return status;
+}
+
+NTSTATUS DequeueMessage(PMESSAGE_QUEUE Queue, PDELETE_MESSAGE Message) {
+    KIRQL oldIrql;
+    NTSTATUS status;
+
+    KeAcquireSpinLock(&Queue->Lock, &oldIrql);
+
+    if (Queue->Count > 0) {
+        RtlCopyMemory(Message, &Queue->Messages[Queue->Head], sizeof(DELETE_MESSAGE));
+        Queue->Head = (Queue->Head + 1) % MAX_MESSAGES;
+        Queue->Count--;
+        status = STATUS_SUCCESS;
+        DbgPrint("FileTracker: Dequeued message, count: %lu\n", Queue->Count);
+    }
+    else {
+        status = STATUS_NO_MORE_ENTRIES;
+        DbgPrint("FileTracker: Queue empty\n");
+    }
+
+    KeReleaseSpinLock(&Queue->Lock, oldIrql);
+    return status;
+}
 
 static NTSTATUS IoctlAddFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
 {
@@ -71,6 +142,33 @@ static NTSTATUS IoctlRemoveFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
 }
 
 
+static NTSTATUS IoctlGetDelMsg(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
+{
+    PVOID outputBuffer = Irp->AssociatedIrp.SystemBuffer;
+    ULONG outputBufferLength = irpSp->Parameters.DeviceIoControl.OutputBufferLength;
+    NTSTATUS status = STATUS_SUCCESS;
+
+    if (outputBuffer && outputBufferLength >= sizeof(DELETE_MESSAGE)) {
+        DELETE_MESSAGE msg;
+        status = DequeueMessage(&MessageQueue, &msg);
+        if (NT_SUCCESS(status)) {
+            RtlCopyMemory(outputBuffer, &msg, sizeof(DELETE_MESSAGE));
+            Irp->IoStatus.Information = sizeof(DELETE_MESSAGE);
+        }
+        else {
+            Irp->IoStatus.Information = 0;
+        }
+    }
+    else {
+        status = STATUS_BUFFER_TOO_SMALL;
+        DbgPrint("FileTracker: Buffer too small for IOCTL_GET_DELETE_MESSAGE, provided: %lu, required: %lu\n",
+            outputBufferLength, sizeof(DELETE_MESSAGE));
+        Irp->IoStatus.Information = 0;
+    }
+
+    return status;
+}
+
 // IOCTL handler
 NTSTATUS IoctlControl(
     _In_ PDEVICE_OBJECT DeviceObject,
@@ -85,8 +183,11 @@ NTSTATUS IoctlControl(
     if (irpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_ADD_TRACKED_FILE) {
         status = IoctlAddFile(Irp, irpSp);
     }
-    else if ((irpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_REMOVE_TRACKED_FILE)) {
+    else if (irpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_REMOVE_TRACKED_FILE) {
         status = IoctlRemoveFile(Irp, irpSp);
+    }
+    else if (irpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_GET_DELETE_MESSAGE) {
+        status = IoctlGetDelMsg(Irp, irpSp);
     }
     else {
         status = STATUS_INVALID_DEVICE_REQUEST;
@@ -94,7 +195,6 @@ NTSTATUS IoctlControl(
     }
 
     Irp->IoStatus.Status = status;
-    Irp->IoStatus.Information = 0;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     return status;
 }
@@ -114,63 +214,36 @@ NTSTATUS IoctlCreateDispatch(
     return STATUS_SUCCESS;
 }
 
-NTSTATUS OnConnect(
-    _In_ PFLT_PORT ClientPort,
-    _In_opt_ PVOID ServerPortCookie,
-    _In_reads_bytes_opt_(SizeOfContext) PVOID ConnectionContext,
-    _In_ ULONG SizeOfContext,
-    _Outptr_result_maybenull_ PVOID* ConnectionCookie
-) {
-    UNREFERENCED_PARAMETER(ServerPortCookie);
-    UNREFERENCED_PARAMETER(ConnectionContext);
-    UNREFERENCED_PARAMETER(SizeOfContext);
-    UNREFERENCED_PARAMETER(ConnectionCookie);
+NTSTATUS IoctlInit() 
+{
+    // Initialize delete event
+    InitializeMessageQueue(&MessageQueue);
 
-    gClientPort = ClientPort;
-    DbgPrint("FileTracker: Client connected to port\n");
     return STATUS_SUCCESS;
 }
 
-VOID OnDisconnect(
-    _In_opt_ PVOID ConnectionCookie
-) {
-    UNREFERENCED_PARAMETER(ConnectionCookie);
 
-    FltCloseClientPort(gFilterHandle, &gClientPort);
-    gClientPort = NULL;
-    DbgPrint("FileTracker: Client disconnected from port\n");
-}
-
-NTSTATUS PortCreate() 
-{
-    UNICODE_STRING portName;
-    OBJECT_ATTRIBUTES portAttributes;
-    // Create communication port
-    RtlInitUnicodeString(&portName, PORT_NAME);
-    InitializeObjectAttributes(&portAttributes, &portName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-     return FltCreateCommunicationPort(gFilterHandle, &gServerPort, &portAttributes, NULL,
-        OnConnect, OnDisconnect, NULL, 1);
-}
 
 NTSTATUS SendToUser(PUNICODE_STRING processName, PUNICODE_STRING name, PUNICODE_STRING timeString)
 {
     NTSTATUS status = STATUS_SUCCESS;
     // Prepare message for user-mode
-    DELETE_MESSAGE msg = { 0 };
-    RtlCopyMemory(msg.ProcessName, processName->Buffer, min(processName->Length, sizeof(msg.ProcessName) - sizeof(WCHAR)));
-    msg.ProcessName[sizeof(msg.ProcessName) / sizeof(WCHAR) - 1] = L'\0';
-    RtlCopyMemory(msg.FilePath, name->Buffer, min(name->Length, sizeof(msg.FilePath) - sizeof(WCHAR)));
-    msg.FilePath[sizeof(msg.FilePath) / sizeof(WCHAR) - 1] = L'\0';
-    RtlCopyMemory(msg.DateTime, timeString->Buffer, min(timeString->Length, sizeof(msg.DateTime) - sizeof(WCHAR)));
-    msg.DateTime[sizeof(msg.DateTime) / sizeof(WCHAR) - 1] = L'\0';
+    DELETE_MESSAGE message;
+    PDELETE_MESSAGE msg = &message;
+    RtlCopyMemory(msg->ProcessName, processName->Buffer, min(processName->Length, sizeof(msg->ProcessName) - sizeof(WCHAR)));
+    msg->ProcessName[sizeof(msg->ProcessName) / sizeof(WCHAR) - 1] = L'\0';
+    RtlCopyMemory(msg->FilePath, name->Buffer, min(name->Length, sizeof(msg->FilePath) - sizeof(WCHAR)));
+    msg->FilePath[sizeof(msg->FilePath) / sizeof(WCHAR) - 1] = L'\0';
+    RtlCopyMemory(msg->DateTime, timeString->Buffer, min(timeString->Length, sizeof(msg->DateTime) - sizeof(WCHAR)));
+    msg->DateTime[sizeof(msg->DateTime) / sizeof(WCHAR) - 1] = L'\0';
 
-    // Send to user-mode if client is connected
-    if (gClientPort) {
-        status = FltSendMessage(gFilterHandle, &gClientPort, &msg, sizeof(DELETE_MESSAGE), NULL, 0, 0);
-        if (!NT_SUCCESS(status)) {
-            DbgPrint("FileTracker: Failed to send message to user-mode: 0x%08x\n", status);
-        }
-    }
+    EnqueueMessage(&MessageQueue, msg);
 
     return status;
+}
+
+NTSTATUS
+IoctlClear() {
+
+    return STATUS_SUCCESS;
 }
