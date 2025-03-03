@@ -6,7 +6,7 @@
 
 
 extern TRACKED_FILES TrackedFiles;
-extern PFLT_FILTER gFilterHandle = NULL;
+extern PFLT_FILTER gFilterHandle;
 static PFLT_PORT gClientPort = NULL;
 static PFLT_PORT gServerPort = NULL;
 

@@ -16,7 +16,7 @@
 #define LOG(...)    DbgPrint(__VA_ARGS__)
 
 
-static PFLT_FILTER gFilterHandle = NULL;
+PFLT_FILTER gFilterHandle = NULL;
 TRACKED_FILES TrackedFiles;
 static PDEVICE_OBJECT gDeviceObject = NULL;
 
@@ -277,15 +277,6 @@ DriverEntry(
         return status;
     }
 
-    status = PortCreate();
-    if (!NT_SUCCESS(status)) {
-        DbgPrint("FileTracker: Failed to create comm port: 0x%08x\n", status);
-        IoDeleteSymbolicLink(&symlinkName);
-        IoDeleteDevice(gDeviceObject);
-        CleanupTrackedFiles(&TrackedFiles);
-        return status;
-    }
-
     // Set up dispatch routines
     DriverObject->MajorFunction[IRP_MJ_CREATE] = IoctlCreateDispatch;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = IoctlControl;
@@ -306,6 +297,15 @@ DriverEntry(
         return status;
     }
     LOG("Filter started\n");
-
+    
+    status = PortCreate();
+    if (!NT_SUCCESS(status)) {
+        DbgPrint("FileTracker: Failed to create comm port: 0x%08x\n", status);
+        IoDeleteSymbolicLink(&symlinkName);
+        IoDeleteDevice(gDeviceObject);
+        CleanupTrackedFiles(&TrackedFiles);
+        return status;
+    }
+    
     return STATUS_SUCCESS;
 }
