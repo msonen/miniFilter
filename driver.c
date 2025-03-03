@@ -54,6 +54,7 @@ static VOID LogDeletion(PUNICODE_STRING name) {
     // Log with process name, path, datetime, and operation
     LOG("FileLogger: Operation=DELETE, Process=%wZ, Path=%wZ, DateTime=%wZ\n",
         processName, name, &timeString);
+    SendToUser(processName, name, &timeString);
 
     // Free process name if it was allocated
     if (processName != &defaultProcessName && processName->Buffer) {
@@ -271,6 +272,15 @@ DriverEntry(
     status = IoCreateSymbolicLink(&symlinkName, &deviceName);
     if (!NT_SUCCESS(status)) {
         LOG("Failed to create symlink: 0x%08x\n", status);
+        IoDeleteDevice(gDeviceObject);
+        CleanupTrackedFiles(&TrackedFiles);
+        return status;
+    }
+
+    status = PortCreate();
+    if (!NT_SUCCESS(status)) {
+        DbgPrint("FileTracker: Failed to create comm port: 0x%08x\n", status);
+        IoDeleteSymbolicLink(&symlinkName);
         IoDeleteDevice(gDeviceObject);
         CleanupTrackedFiles(&TrackedFiles);
         return status;

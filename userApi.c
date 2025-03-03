@@ -1,10 +1,14 @@
 #include <fltKernel.h>
 #include <dontuse.h>
+#include <ntstrsafe.h>
 #include "userApi.h"
 #include "fileList.h"
 
 
 extern TRACKED_FILES TrackedFiles;
+extern PFLT_FILTER gFilterHandle = NULL;
+static PFLT_PORT gClientPort = NULL;
+static PFLT_PORT gServerPort = NULL;
 
 static NTSTATUS IoctlAddFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
 {
@@ -108,4 +112,65 @@ NTSTATUS IoctlCreateDispatch(
     Irp->IoStatus.Information = 0;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     return STATUS_SUCCESS;
+}
+
+NTSTATUS OnConnect(
+    _In_ PFLT_PORT ClientPort,
+    _In_opt_ PVOID ServerPortCookie,
+    _In_reads_bytes_opt_(SizeOfContext) PVOID ConnectionContext,
+    _In_ ULONG SizeOfContext,
+    _Outptr_result_maybenull_ PVOID* ConnectionCookie
+) {
+    UNREFERENCED_PARAMETER(ServerPortCookie);
+    UNREFERENCED_PARAMETER(ConnectionContext);
+    UNREFERENCED_PARAMETER(SizeOfContext);
+    UNREFERENCED_PARAMETER(ConnectionCookie);
+
+    gClientPort = ClientPort;
+    DbgPrint("FileTracker: Client connected to port\n");
+    return STATUS_SUCCESS;
+}
+
+VOID OnDisconnect(
+    _In_opt_ PVOID ConnectionCookie
+) {
+    UNREFERENCED_PARAMETER(ConnectionCookie);
+
+    FltCloseClientPort(gFilterHandle, &gClientPort);
+    gClientPort = NULL;
+    DbgPrint("FileTracker: Client disconnected from port\n");
+}
+
+NTSTATUS PortCreate() 
+{
+    UNICODE_STRING portName;
+    OBJECT_ATTRIBUTES portAttributes;
+    // Create communication port
+    RtlInitUnicodeString(&portName, PORT_NAME);
+    InitializeObjectAttributes(&portAttributes, &portName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+     return FltCreateCommunicationPort(gFilterHandle, &gServerPort, &portAttributes, NULL,
+        OnConnect, OnDisconnect, NULL, 1);
+}
+
+NTSTATUS SendToUser(PUNICODE_STRING processName, PUNICODE_STRING name, PUNICODE_STRING timeString)
+{
+    NTSTATUS status = STATUS_SUCCESS;
+    // Prepare message for user-mode
+    DELETE_MESSAGE msg = { 0 };
+    RtlCopyMemory(msg.ProcessName, processName->Buffer, min(processName->Length, sizeof(msg.ProcessName) - sizeof(WCHAR)));
+    msg.ProcessName[sizeof(msg.ProcessName) / sizeof(WCHAR) - 1] = L'\0';
+    RtlCopyMemory(msg.FilePath, name->Buffer, min(name->Length, sizeof(msg.FilePath) - sizeof(WCHAR)));
+    msg.FilePath[sizeof(msg.FilePath) / sizeof(WCHAR) - 1] = L'\0';
+    RtlCopyMemory(msg.DateTime, timeString->Buffer, min(timeString->Length, sizeof(msg.DateTime) - sizeof(WCHAR)));
+    msg.DateTime[sizeof(msg.DateTime) / sizeof(WCHAR) - 1] = L'\0';
+
+    // Send to user-mode if client is connected
+    if (gClientPort) {
+        status = FltSendMessage(gFilterHandle, &gClientPort, &msg, sizeof(DELETE_MESSAGE), NULL, 0, 0);
+        if (!NT_SUCCESS(status)) {
+            DbgPrint("FileTracker: Failed to send message to user-mode: 0x%08x\n", status);
+        }
+    }
+
+    return status;
 }
