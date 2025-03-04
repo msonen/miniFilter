@@ -91,9 +91,9 @@ FileLogger: Operation=DELETE, Process=cmd.exe, Path=\Device\HarddiskVolume3\Test
 
 ## Debug Output
 - Use **DebugView** (Sysinternals) with "Capture Kernel" enabled:
-- `FileTracker: Driver loaded successfully, DELETE_MESSAGE size: 564`
-- `FileTracker: Enqueued message, count: 1`
-- `FileTracker: Dequeued message, count: 0`
+- `driverFlt: Driver loaded successfully, DELETE_MESSAGE size: 564`
+- `driverFlt: Enqueued message, count: 1`
+- `driverFlt: Dequeued message, count: 0`
 
 ## Limitations
 -   Queue Size: 10 messages max; oldest events drop if full.
