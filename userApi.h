@@ -13,12 +13,14 @@
 
 
 
-NTSTATUS IoctlControl(
+NTSTATUS 
+IoctlControl(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp
 );
 
-NTSTATUS IoctlCreateDispatch(
+NTSTATUS 
+IoctlCreateDispatch(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp
 );

@@ -33,6 +33,9 @@
     <ClCompile Include="userApi.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="circularQ.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -42,6 +45,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="userApi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="circularQ.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

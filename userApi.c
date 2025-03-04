@@ -3,6 +3,7 @@
 #include <ntstrsafe.h>
 #include "userApi.h"
 #include "fileList.h"
+#include "circularQ.h"
 
 #define MAX_MESSAGES 10 // Circular queue size
 
@@ -16,70 +17,9 @@ typedef struct _DELETE_MESSAGE {
 #pragma pack(pop)
 
 
-// Circular queue for messages
-typedef struct _MESSAGE_QUEUE {
-    DELETE_MESSAGE Messages[MAX_MESSAGES];
-    ULONG Head; // Index of oldest message
-    ULONG Tail; // Index where next message goes
-    ULONG Count; // Number of messages in queue
-    KSPIN_LOCK Lock;
-} MESSAGE_QUEUE, * PMESSAGE_QUEUE;
-
 extern TRACKED_FILES TrackedFiles;
 extern PDEVICE_OBJECT gDeviceObject;
-static MESSAGE_QUEUE MessageQueue;
-
-
-VOID InitializeMessageQueue(PMESSAGE_QUEUE Queue) {
-    RtlZeroMemory(Queue->Messages, sizeof(Queue->Messages));
-    Queue->Head = 0;
-    Queue->Tail = 0;
-    Queue->Count = 0;
-    KeInitializeSpinLock(&Queue->Lock);
-}
-
-NTSTATUS EnqueueMessage(PMESSAGE_QUEUE Queue, PDELETE_MESSAGE Message) {
-    KIRQL oldIrql;
-    NTSTATUS status;
-    KeAcquireSpinLock(&Queue->Lock, &oldIrql);
-
-    if (Queue->Count < MAX_MESSAGES) {
-        RtlCopyMemory(&Queue->Messages[Queue->Tail], Message, sizeof(DELETE_MESSAGE));
-        Queue->Tail = (Queue->Tail + 1) % MAX_MESSAGES;
-        Queue->Count++;
-        status = STATUS_SUCCESS;
-        DbgPrint("FileTracker: Enqueued message, count: %lu\n", Queue->Count);
-    }
-    else {
-        status = STATUS_INSUFFICIENT_RESOURCES;
-        DbgPrint("FileTracker: Queue full, message dropped\n");
-    }
-
-    KeReleaseSpinLock(&Queue->Lock, oldIrql);
-    return status;
-}
-
-NTSTATUS DequeueMessage(PMESSAGE_QUEUE Queue, PDELETE_MESSAGE Message) {
-    KIRQL oldIrql;
-    NTSTATUS status;
-
-    KeAcquireSpinLock(&Queue->Lock, &oldIrql);
-
-    if (Queue->Count > 0) {
-        RtlCopyMemory(Message, &Queue->Messages[Queue->Head], sizeof(DELETE_MESSAGE));
-        Queue->Head = (Queue->Head + 1) % MAX_MESSAGES;
-        Queue->Count--;
-        status = STATUS_SUCCESS;
-        DbgPrint("FileTracker: Dequeued message, count: %lu\n", Queue->Count);
-    }
-    else {
-        status = STATUS_NO_MORE_ENTRIES;
-        DbgPrint("FileTracker: Queue empty\n");
-    }
-
-    KeReleaseSpinLock(&Queue->Lock, oldIrql);
-    return status;
-}
+static CIRCULAR_QUEUE MessageQueue;
 
 static NTSTATUS IoctlAddFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
 {
@@ -150,12 +90,12 @@ static NTSTATUS IoctlGetDelMsg(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
 
     if (outputBuffer && outputBufferLength >= sizeof(DELETE_MESSAGE)) {
         DELETE_MESSAGE msg;
-        status = DequeueMessage(&MessageQueue, &msg);
-        if (NT_SUCCESS(status)) {
+        if (Dequeue(&MessageQueue, (PUCHAR)&msg)) {
             RtlCopyMemory(outputBuffer, &msg, sizeof(DELETE_MESSAGE));
             Irp->IoStatus.Information = sizeof(DELETE_MESSAGE);
         }
         else {
+            status = STATUS_NO_MORE_ENTRIES;
             Irp->IoStatus.Information = 0;
         }
     }
@@ -217,12 +157,8 @@ NTSTATUS IoctlCreateDispatch(
 NTSTATUS IoctlInit() 
 {
     // Initialize delete event
-    InitializeMessageQueue(&MessageQueue);
-
-    return STATUS_SUCCESS;
+    return InitializeQueue(&MessageQueue, sizeof(DELETE_MESSAGE), MAX_MESSAGES);
 }
-
-
 
 NTSTATUS SendToUser(PUNICODE_STRING processName, PUNICODE_STRING name, PUNICODE_STRING timeString)
 {
@@ -237,13 +173,13 @@ NTSTATUS SendToUser(PUNICODE_STRING processName, PUNICODE_STRING name, PUNICODE_
     RtlCopyMemory(msg->DateTime, timeString->Buffer, min(timeString->Length, sizeof(msg->DateTime) - sizeof(WCHAR)));
     msg->DateTime[sizeof(msg->DateTime) / sizeof(WCHAR) - 1] = L'\0';
 
-    EnqueueMessage(&MessageQueue, msg);
-
+    Enqueue(&MessageQueue, (PUCHAR)msg);
     return status;
 }
 
 NTSTATUS
 IoctlClear() {
 
+    CleanupQueue(&MessageQueue);
     return STATUS_SUCCESS;
 }

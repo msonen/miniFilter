@@ -119,6 +119,7 @@
     <FilesToPackage Include="$(TargetPath)" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="circularQ.c" />
     <ClCompile Include="driver.c" />
     <ClCompile Include="fileList.c" />
     <ClCompile Include="userApi.c" />
@@ -127,6 +128,7 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="circularQ.h" />
     <ClInclude Include="fileList.h" />
     <ClInclude Include="userApi.h" />
   </ItemGroup>
