@@ -3,7 +3,7 @@
 The `minifilter` system is a lightweight solution for tracking and optionally protecting file deletions on Windows. It consists of a kernel-mode minifilter driver (`driverFlt.sys`) and two user-mode applications: `ctlFlt.exe` for controlling the driver and `watchFlt.exe` for monitoring deletion events.
 
 ## Components
-- **driverFlt.sys**: A kernel-mode minifilter driver that monitors file deletions for specified paths, storing events in a circular queue (max 10 messages) and optionally blocking deletions for protected files.
+- **driverFlt.sys**: A kernel-mode minifilter driver that monitors file deletions for specified files, storing events in a circular queue (max 10 messages) and optionally blocking deletions for protected files.
 - **ctlFlt.exe**: A command-line tool to add, remove, or protect files in the driver’s tracking list.
 - **watchFlt.exe**: A console application that polls the driver to retrieve and display deletion events.
 
@@ -73,7 +73,7 @@ The `minifilter` system is a lightweight solution for tracking and optionally pr
     ```
     ctlFlt.exe -r "C:\Test\file.txt"
     ```
-    - Removes `C:\Test\a.txt` from the tracking list.
+    - Removes `C:\Test\file.txt` from the tracking list.
 
 ### Monitor Deletions with `watchFlt.exe`
     watchFlt.exe
@@ -81,7 +81,7 @@ The `minifilter` system is a lightweight solution for tracking and optionally pr
 - Output: "Connected to FileTracker device. Polling for delete events... (Buffer size: 564 bytes)"
 - Polls every 100ms; prints events like:
 ```
-FileLogger: Operation=DELETE, Process=cmd.exe, Path=\Device\HarddiskVolume3\Test\a.txt, DateTime=2025-03-03 14:30:45
+FileLogger: Operation=DELETE, Process=cmd.exe, Path=\Device\HarddiskVolume3\Test\file.txt, DateTime=2025-03-03 14:30:45
 ```
 
 ### Test the Feature
@@ -121,4 +121,3 @@ FileLogger: Operation=DELETE, Process=cmd.exe, Path=\Device\HarddiskVolume3\Test
 - **"Failed to open device"**: Run as Administrator; ensure driver is loaded (`fltmc`).
 - **"Failed to get message: 259"**: Normal when queue is empty (`ERROR_NO_MORE_ITEMS`); app retries.
 - **"Failed to get message: 170"**: Another `watchFlt.exe` instance is running; ensure only one runs.
-- **BSOD**: Shouldn’t occur with this design; if it does, enable Driver Verifier (`verifier /standard /driver driverFlt.sys`) and share bugcheck code.
