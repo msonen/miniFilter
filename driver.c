@@ -44,21 +44,18 @@ LogDeletion(PUNICODE_STRING name) {
         L"%04d-%02d-%02d %02d:%02d:%02d",
         timeFields.Year, timeFields.Month, timeFields.Day,
         timeFields.Hour, timeFields.Minute, timeFields.Second);
-    if (!NT_SUCCESS(status)) {
-        RtlInitUnicodeString(&timeString, L"Unknown Time");
-    }
+    if (NT_SUCCESS(status)) {
+        SendToUser(processName, name, &timeString);
+        // Log with process name, path, datetime, and operation
+        LOG("FileLogger: Operation=DELETE, Process=%wZ, Path=%wZ, DateTime=%wZ\n",
+            processName, name, &timeString);
 
-    SendToUser(processName, name, &timeString);
-    // Log with process name, path, datetime, and operation
-    LOG("FileLogger: Operation=DELETE, Process=%wZ, Path=%wZ, DateTime=%wZ\n",
-        processName, name, &timeString);
-    
-    // Free process name if it was allocated
-    if (processName != &defaultProcessName && processName->Buffer) {
-        ExFreePool(processName->Buffer);
-        ExFreePool(processName);
+        // Free process name if it was allocated
+        if (processName != &defaultProcessName && processName->Buffer) {
+            ExFreePool(processName->Buffer);
+            ExFreePool(processName);
+        }
     }
-
 }
 
 FLT_POSTOP_CALLBACK_STATUS
@@ -220,12 +217,6 @@ VOID DriverUnload(
 }
 
 
-#define BUILTIN_TRACK_LIST      2
-static PCWSTR _filelist_builtin[BUILTIN_TRACK_LIST] =
-{
-    L"\\Device\\HarddiskVolume3\\Test\\cmd.txt", L"\\Device\\HarddiskVolume3\\Test\\a.txt"
-};
-
 NTSTATUS
 DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
@@ -245,15 +236,6 @@ DriverEntry(
         return status;
     }
     
-    for (size_t i = 0; i < BUILTIN_TRACK_LIST; ++i) {
-        status = AddTrackedFile(&TrackedFiles, _filelist_builtin[i], FALSE);
-
-        if (!NT_SUCCESS(status)) {
-            DEBUG("AddTrackedFile failed, 0x%08x\n", status);
-            return status;
-        }
-    }
-
     // Create device object
     RtlInitUnicodeString(&deviceName, DEVICE_NAME);
     status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, 
