@@ -89,7 +89,7 @@ PostOperationCallback(
     }
 
     UNICODE_STRING filePath = nameInfo->Name;
-    BOOLEAN fileMatches = GetTrackedFile(&TrackedFiles, &filePath, NULL);
+    BOOLEAN fileMatches = GetTrackedFile(&TrackedFiles, &filePath, NULL, NULL);
 
     if (!fileMatches) {
         DEBUG("FileLogger: %wZ is not being tracked.\n", &nameInfo->Name);
@@ -110,11 +110,39 @@ PostOperationCallback(
     return FLT_POSTOP_FINISHED_PROCESSING;
 }
 
+FLT_PREOP_CALLBACK_STATUS PreOperationCallback(
+    _Inout_ PFLT_CALLBACK_DATA Data,
+    _In_ PCFLT_RELATED_OBJECTS FltObjects,
+    _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
+) {
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
+
+    if (Data->Iopb->MajorFunction == IRP_MJ_SET_INFORMATION) {
+        PFILE_DISPOSITION_INFORMATION dispInfo = Data->Iopb->Parameters.SetFileInformation.InfoBuffer;
+        if (dispInfo && dispInfo->DeleteFile) {
+            PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
+            NTSTATUS status = FltGetFileNameInformation(Data, FLT_FILE_NAME_OPENED | FLT_FILE_NAME_QUERY_DEFAULT, &nameInfo);
+            if (NT_SUCCESS(status) && nameInfo->Name.Buffer) {
+                BOOLEAN protected = FALSE;
+                if (GetTrackedFile(&TrackedFiles, &nameInfo->Name, NULL, &protected) && protected) {
+                    LOG("FileTracker: Blocked deletion of protected file %wZ\n", &nameInfo->Name);
+                    FltReleaseFileNameInformation(nameInfo);
+                    Data->IoStatus.Status = STATUS_ACCESS_DENIED;
+                    return FLT_PREOP_COMPLETE;
+                }
+                FltReleaseFileNameInformation(nameInfo);
+            }
+        }
+    }
+
+    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+}
 
 
 const FLT_OPERATION_REGISTRATION Callbacks[] = {
     //{ IRP_MJ_CREATE, 0, NULL, PostOperationCallback },
-    { IRP_MJ_SET_INFORMATION, 0, NULL, PostOperationCallback },
+    { IRP_MJ_SET_INFORMATION, 0, PreOperationCallback, PostOperationCallback },
     //{ IRP_MJ_CLEANUP, 0, NULL, PostOperationCallback },
     { IRP_MJ_OPERATION_END }
 };
@@ -218,7 +246,7 @@ DriverEntry(
     }
     
     for (size_t i = 0; i < BUILTIN_TRACK_LIST; ++i) {
-        status = AddTrackedFile(&TrackedFiles, _filelist_builtin[i]);
+        status = AddTrackedFile(&TrackedFiles, _filelist_builtin[i], FALSE);
 
         if (!NT_SUCCESS(status)) {
             DEBUG("AddTrackedFile failed, 0x%08x\n", status);

@@ -7,11 +7,13 @@
  * @brief Structure to hold each tracked filename in the linked list.
  *
  * This structure represents a single entry in the list of tracked files,
- * containing the filename and a link to the next/previous entries.
+ * containing the filename, a flag indicating if the file is protected,
+ * and a link to the next/previous entries.
  */
 typedef struct _TRACKED_FILE_ENTRY {
     LIST_ENTRY ListEntry;    ///< Must be the first member for LIST_ENTRY compatibility with the linked list.
     UNICODE_STRING FileName; ///< Stores the tracked filename as a UNICODE_STRING.
+    BOOLEAN Protected;       ///< Flag indicating if the file is protected from deletion.
 } TRACKED_FILE_ENTRY, *PTRACKED_FILE_ENTRY;
 
 /**
@@ -43,9 +45,10 @@ NTSTATUS InitializeTrackedFiles(PTRACKED_FILES TrackedFilesList);
  *
  * @param[in,out] TrackedFilesList Pointer to the TRACKED_FILES structure managing the list.
  * @param[in] FileName Pointer to a null-terminated wide-character string of the filename to track.
+ * @param[in] Protected Flag indicating if the file is protected from deletion.
  * @return NTSTATUS STATUS_SUCCESS on success, STATUS_INSUFFICIENT_RESOURCES if allocation fails.
  */
-NTSTATUS AddTrackedFile(PTRACKED_FILES TrackedFilesList, PCWSTR FileName);
+NTSTATUS AddTrackedFile(PTRACKED_FILES TrackedFilesList, PCWSTR FileName, BOOLEAN Protected);
 
 /**
  * @brief Removes a file from the tracked files list.
@@ -75,10 +78,8 @@ VOID CleanupTrackedFiles(PTRACKED_FILES TrackedFilesList);
  * @param[in] TrackedFilesList Pointer to the TRACKED_FILES structure managing the list.
  * @param[in] FilePath Pointer to a UNICODE_STRING containing the filename to search for.
  * @param[out] FoundFilePath Optional pointer to a UNICODE_STRING to receive the matched filename (if found).
+ * @param[out] Protected Optional pointer to a BOOLEAN to receive the protection status of the file (if found).
  * @return BOOLEAN TRUE if the file is found, FALSE otherwise.
  */
-BOOLEAN GetTrackedFile(
-    _In_ PTRACKED_FILES TrackedFilesList,
-    _In_ PUNICODE_STRING FilePath,
-    _Out_opt_ PUNICODE_STRING FoundFilePath
-);
+BOOLEAN GetTrackedFile(PTRACKED_FILES TrackedFilesList, PUNICODE_STRING FilePath, 
+                       PUNICODE_STRING FoundFilePath, PBOOLEAN Protected);

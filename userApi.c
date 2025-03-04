@@ -28,28 +28,30 @@ IoctlAddFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
     ULONG inputBufferLength = irpSp->Parameters.DeviceIoControl.InputBufferLength;
     NTSTATUS status = STATUS_SUCCESS;
 
-    if (inputBuffer && inputBufferLength > 0 && inputBufferLength <= UNICODE_STRING_MAX_BYTES) {
+    if (inputBuffer && inputBufferLength > sizeof(WCHAR)) {
         UNICODE_STRING userFilePath;
-        RtlInitUnicodeString(&userFilePath, (PCWSTR)inputBuffer);
+        BOOLEAN protected = FALSE;
+        // Check for protection flag (e.g., ends with ":p")
+        PWCHAR buffer = (PWCHAR)inputBuffer;
+        if (wcslen(buffer) > 2 && wcscmp(buffer + wcslen(buffer) - 2, L":p") == 0) {
+            protected = TRUE;
+            buffer[wcslen(buffer) - 2] = L'\0'; // Remove ":p" for filename
+        }
+        RtlInitUnicodeString(&userFilePath, buffer);
         if (userFilePath.Length > 0 && userFilePath.Length <= inputBufferLength) {
-            status = AddTrackedFile(&TrackedFiles, userFilePath.Buffer);
+            status = AddTrackedFile(&TrackedFiles, userFilePath.Buffer, protected);
             if (NT_SUCCESS(status)) {
-                DEBUG("driverFlt: Successfully added file %wZ\n", &userFilePath);
+                LOG("driverFlt: Successfully added file %wZ, Protected: %d\n", &userFilePath, protected);
+            } else {
+                LOG("driverFlt: Failed to add file %wZ, status: 0x%08x\n", &userFilePath, status);
             }
-            else {
-                DEBUG("driverFlt: Failed to add file %wZ, status: 0x%08x\n", &userFilePath, status);
-            }
-        }
-        else {
+        } else {
             status = STATUS_INVALID_PARAMETER;
-            DEBUG("driverFlt: Invalid parameter in IOCTL\n");
         }
-    }
-    else {
+    } else {
         status = STATUS_INVALID_PARAMETER;
-        DEBUG("driverFlt: No input buffer or invalid length\n");
     }
-
+    Irp->IoStatus.Information = 0;
     return status;
 }
 

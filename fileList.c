@@ -11,42 +11,29 @@ NTSTATUS InitializeTrackedFiles(PTRACKED_FILES TrackedFilesList)
     return STATUS_SUCCESS;
 }
 
-NTSTATUS AddTrackedFile(PTRACKED_FILES TrackedFilesList, PCWSTR FilePath)
-{
+NTSTATUS 
+AddTrackedFile(PTRACKED_FILES TrackedFilesList, PCWSTR FileName, BOOLEAN Protected) {
     KIRQL oldIrql;
-    PTRACKED_FILE_ENTRY entry = NULL;
-    PWCHAR fileNameBuffer = NULL;
+    PTRACKED_FILE_ENTRY entry = ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(TRACKED_FILE_ENTRY), 'kFtL');
+    if (!entry) return STATUS_INSUFFICIENT_RESOURCES;
 
-    // Allocate memory for the entry
-    entry = ExAllocatePool2(POOL_FLAG_NON_PAGED,
-        sizeof(TRACKED_FILE_ENTRY),
-        'kFtL');
-    if (!entry) {
-        return STATUS_INSUFFICIENT_RESOURCES;
-    }
-
-    // Initialize the filename with full path
-    SIZE_T pathLength = wcslen(FilePath) * sizeof(WCHAR);
-    fileNameBuffer = ExAllocatePool2(POOL_FLAG_NON_PAGED,
-        pathLength + sizeof(WCHAR),
-        'kFtL');
-    if (!fileNameBuffer) {
+    SIZE_T pathLength = wcslen(FileName) * sizeof(WCHAR);
+    entry->FileName.Buffer = ExAllocatePool2(POOL_FLAG_NON_PAGED, pathLength + sizeof(WCHAR), 'kFtL');
+    if (!entry->FileName.Buffer) {
         ExFreePool(entry);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     entry->FileName.Length = (USHORT)pathLength;
     entry->FileName.MaximumLength = (USHORT)(pathLength + sizeof(WCHAR));
-    entry->FileName.Buffer = fileNameBuffer;
-    RtlCopyMemory(entry->FileName.Buffer, FilePath, pathLength);
+    RtlCopyMemory(entry->FileName.Buffer, FileName, pathLength);
     entry->FileName.Buffer[pathLength / sizeof(WCHAR)] = L'\0';
+    entry->Protected = Protected;
 
-    // Add to list
     KeAcquireSpinLock(&TrackedFilesList->Lock, &oldIrql);
     InsertTailList(&TrackedFilesList->FileListHead, &entry->ListEntry);
     KeReleaseSpinLock(&TrackedFilesList->Lock, oldIrql);
-
-    return STATUS_SUCCESS;  // Success case
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS RemoveTrackedFile(PTRACKED_FILES TrackedFilesList, PCWSTR FilePath) {
@@ -91,32 +78,24 @@ VOID CleanupTrackedFiles(PTRACKED_FILES TrackedFilesList)
     KeReleaseSpinLock(&TrackedFilesList->Lock, oldIrql);
 }
 
-BOOLEAN
-GetTrackedFile(
-    _In_ PTRACKED_FILES TrackedFilesList,
-    _In_ PUNICODE_STRING FilePath,
-    _Out_opt_ PUNICODE_STRING FoundFilePath  // Optional: returns the matched path
-)
-{
+BOOLEAN 
+GetTrackedFile(PTRACKED_FILES TrackedFilesList, PUNICODE_STRING FilePath, 
+    PUNICODE_STRING FoundFilePath, PBOOLEAN Protected) {
     KIRQL oldIrql;
     BOOLEAN fileExists = FALSE;
 
     KeAcquireSpinLock(&TrackedFilesList->Lock, &oldIrql);
-
     PLIST_ENTRY entry = TrackedFilesList->FileListHead.Flink;
     while (entry != &TrackedFilesList->FileListHead) {
         PTRACKED_FILE_ENTRY fileEntry = CONTAINING_RECORD(entry, TRACKED_FILE_ENTRY, ListEntry);
-
-        if (RtlEqualUnicodeString(FilePath, &fileEntry->FileName, TRUE)) { // Case-insensitive
+        if (RtlEqualUnicodeString(FilePath, &fileEntry->FileName, TRUE)) {
             fileExists = TRUE;
-            if (FoundFilePath) {
-                *FoundFilePath = fileEntry->FileName;  // Return the matched path
-            }
+            if (FoundFilePath) *FoundFilePath = fileEntry->FileName;
+            if (Protected) *Protected = fileEntry->Protected;
             break;
         }
         entry = entry->Flink;
     }
-
     KeReleaseSpinLock(&TrackedFilesList->Lock, oldIrql);
     return fileExists;
 }
