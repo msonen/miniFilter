@@ -1,0 +1,127 @@
+;
+; driverFlt.inf
+;
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = "ActivityMonitor" ; TODO: specify appropriate Class
+ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2} ; TODO: specify appropriate ClassGuid
+Provider    = %ProviderString%
+DriverVer   = 01/03/2025,1.0.0.1
+CatalogFile = driverFlt.cat
+DriverVer   = ; TODO: set DriverVer in stampinf property pages
+PnpLockdown = 1
+
+[SourceDisksFiles]
+driverFlt.sys = 1,,
+
+[SourceDisksNames]
+1 = %DiskId1%,,,
+
+[DestinationDirs]
+MiniFilterDownlevel.CopyDriverFiles  = 12            ;%windir%\system32\drivers
+MiniFilterDownlevel.DelDriverFiles   = 12            ;%windir%\system32\drivers
+MiniFilter.DriverFiles               = 13            ;driver store
+
+;;
+;; Default install sections
+;;
+
+[DefaultInstall.NT$ARCH$.10.0...25952]
+OptionDesc          = %ServiceDescription%
+CopyFiles           = MiniFilter.DriverFiles
+
+[DefaultInstall.NT$ARCH$.10.0...25952.Services]
+AddService          = %ServiceName%,,MiniFilter.Service
+
+;
+; Support sections
+;
+
+[MiniFilter.Service]
+DisplayName      = %ServiceName%
+Description      = %ServiceDescription%
+ServiceBinary    = %13%\%DriverName%.sys        ;%windir%\system32\drivers\
+Dependencies     = "FltMgr"
+ServiceType      = 2                            ;SERVICE_FILE_SYSTEM_DRIVER
+StartType        = 3                            ;SERVICE_DEMAND_START
+ErrorControl     = 1                            ;SERVICE_ERROR_NORMAL
+LoadOrderGroup   = "FSFilter Activity Monitor"
+AddReg           = MiniFilter.AddRegistry
+
+[MiniFilter.AddRegistry]
+HKR,"Parameters","SupportedFeatures",0x00010001,0x3
+HKR,"Parameters\Instances","DefaultInstance",0x00000000,%DefaultInstance%
+HKR,"Parameters\Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
+HKR,"Parameters\Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
+
+[MiniFilter.DriverFiles]
+%DriverName%.sys
+
+;;
+;; Downlevel default install sections
+;;
+
+[DefaultInstall.NT$ARCH$]
+OptionDesc          = %ServiceDescription%
+CopyFiles           = MiniFilterDownlevel.CopyDriverFiles
+
+[DefaultInstall.NT$ARCH$.Services]
+AddService          = %ServiceName%,,MiniFilterDownlevel.Service
+
+;;
+;; Downlevel default uninstall sections
+;;
+
+[DefaultUninstall.NT$ARCH$]
+LegacyUninstall = 1
+DelFiles        = MiniFilterDownlevel.DelDriverFiles
+
+[DefaultUninstall.NT$ARCH$.Services]
+DelService      = %ServiceName%,0x200      ;Ensure service is stopped before deleting
+
+;
+; Downlevel support sections
+;
+
+[MiniFilterDownlevel.Service]
+DisplayName      = %ServiceName%
+Description      = %ServiceDescription%
+ServiceBinary    = %12%\%DriverName%.sys        ;%windir%\system32\drivers\
+Dependencies     = "FltMgr"
+ServiceType      = 2                            ;SERVICE_FILE_SYSTEM_DRIVER
+StartType        = 3                            ;SERVICE_DEMAND_START
+ErrorControl     = 1                            ;SERVICE_ERROR_NORMAL
+LoadOrderGroup   = "FSFilter Activity Monitor"
+AddReg           = MiniFilterDownlevel.AddRegistry
+
+[MiniFilterDownlevel.AddRegistry]
+HKR,,"SupportedFeatures",0x00010001,0x3
+HKR,"Instances","DefaultInstance",0x00000000,%DefaultInstance%
+HKR,"Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
+HKR,"Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
+
+[MiniFilterDownlevel.CopyDriverFiles]
+%DriverName%.sys
+
+[MiniFilterDownlevel.DelDriverFiles]
+%DriverName%.sys
+
+
+;;
+;; String Section
+;;
+
+[Strings]
+ProviderString          = "TODO-Set-Provider"
+ServiceDescription      = "Delete Notification Mini-Filter Driver"
+ServiceName             = "driverFlt"
+DriverName              = "driverFlt"
+DiskId1                 = "driverFlt Device Installation Disk"
+
+;Instances specific information.
+DefaultInstance         = "driverFlt Instance"
+Instance1.Name          = "driverFlt Instance"
+Instance1.Altitude      = "370150"
+Instance1.Flags         = 0x0              ; Allow all attachments
+
