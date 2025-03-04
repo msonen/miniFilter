@@ -124,18 +124,21 @@ IoctlControl(
 
     UNREFERENCED_PARAMETER(DeviceObject);
 
-    if (irpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_ADD_TRACKED_FILE) {
+    switch (irpSp->Parameters.DeviceIoControl.IoControlCode)
+    {
+    case IOCTL_ADD_TRACKED_FILE:
         status = IoctlAddFile(Irp, irpSp);
-    }
-    else if (irpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_REMOVE_TRACKED_FILE) {
+        break;
+    case IOCTL_REMOVE_TRACKED_FILE:
         status = IoctlRemoveFile(Irp, irpSp);
-    }
-    else if (irpSp->Parameters.DeviceIoControl.IoControlCode == IOCTL_GET_DELETE_MESSAGE) {
+        break;
+    case IOCTL_GET_DELETE_MESSAGE:
         status = IoctlGetDelMsg(Irp, irpSp);
-    }
-    else {
+        break;
+    default:
         status = STATUS_INVALID_DEVICE_REQUEST;
         DEBUG("driverFlt: Unknown IOCTL code\n");
+        break;
     }
 
     Irp->IoStatus.Status = status;
@@ -166,21 +169,60 @@ IoctlInit()
     return InitializeQueue(&MessageQueue, sizeof(DELETE_MESSAGE), MAX_MESSAGES);
 }
 
-NTSTATUS SendToUser(PUNICODE_STRING processName, PUNICODE_STRING name, PUNICODE_STRING timeString)
-{
-    NTSTATUS status = STATUS_SUCCESS;
-    // Prepare message for user-mode
-    DELETE_MESSAGE message;
-    PDELETE_MESSAGE msg = &message;
-    RtlCopyMemory(msg->ProcessName, processName->Buffer, min(processName->Length, sizeof(msg->ProcessName) - sizeof(WCHAR)));
-    msg->ProcessName[sizeof(msg->ProcessName) / sizeof(WCHAR) - 1] = L'\0';
-    RtlCopyMemory(msg->FilePath, name->Buffer, min(name->Length, sizeof(msg->FilePath) - sizeof(WCHAR)));
-    msg->FilePath[sizeof(msg->FilePath) / sizeof(WCHAR) - 1] = L'\0';
-    RtlCopyMemory(msg->DateTime, timeString->Buffer, min(timeString->Length, sizeof(msg->DateTime) - sizeof(WCHAR)));
-    msg->DateTime[sizeof(msg->DateTime) / sizeof(WCHAR) - 1] = L'\0';
+static NTSTATUS 
+SafeCopyUnicodeString(PWCHAR dest, size_t destSize, PUNICODE_STRING src) {
+    if (!dest || !src || !src->Buffer) {
+        return STATUS_INVALID_PARAMETER;
+    }
 
-    Enqueue(&MessageQueue, (PUCHAR)msg);
-    return status;
+    // Ensure the destination buffer is large enough to hold at least one character and a null terminator
+    if (destSize < sizeof(WCHAR)) {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    // Copy the string, ensuring null-termination
+    size_t bytesToCopy = min(src->Length, destSize - sizeof(WCHAR));
+    RtlCopyMemory(dest, src->Buffer, bytesToCopy);
+    dest[bytesToCopy / sizeof(WCHAR)] = L'\0'; // Null-terminate the string
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS 
+SendToUser(PUNICODE_STRING processName, PUNICODE_STRING name, PUNICODE_STRING timeString) {
+    NTSTATUS status = STATUS_SUCCESS;
+    DELETE_MESSAGE message = { 0 }; // Initialize the message structure to zero
+
+    // Validate input parameters
+    if (!processName || !name || !timeString) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    // Copy process name
+    status = SafeCopyUnicodeString(message.ProcessName, sizeof(message.ProcessName), processName);
+    if (!NT_SUCCESS(status)) {
+        DbgPrint("Failed to copy process name: 0x%X\n", status);
+        return status;
+    }
+
+    // Copy file path
+    status = SafeCopyUnicodeString(message.FilePath, sizeof(message.FilePath), name);
+    if (!NT_SUCCESS(status)) {
+        DbgPrint("Failed to copy file path: 0x%X\n", status);
+        return status;
+    }
+
+    // Copy timestamp
+    status = SafeCopyUnicodeString(message.DateTime, sizeof(message.DateTime), timeString);
+    if (!NT_SUCCESS(status)) {
+        DbgPrint("Failed to copy timestamp: 0x%X\n", status);
+        return status;
+    }
+
+    // Enqueue the message
+    Enqueue(&MessageQueue, (PUCHAR)&message);
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
