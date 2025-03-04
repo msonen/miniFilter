@@ -4,6 +4,7 @@
 #include "userApi.h"
 #include "fileList.h"
 #include "circularQ.h"
+#include "debug.h"
 
 #define MAX_MESSAGES 10 // Circular queue size
 
@@ -33,20 +34,20 @@ static NTSTATUS IoctlAddFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
         if (userFilePath.Length > 0 && userFilePath.Length <= inputBufferLength) {
             status = AddTrackedFile(&TrackedFiles, userFilePath.Buffer);
             if (NT_SUCCESS(status)) {
-                DbgPrint("FileTracker: Successfully added file %wZ\n", &userFilePath);
+                DEBUG("driverFlt: Successfully added file %wZ\n", &userFilePath);
             }
             else {
-                DbgPrint("FileTracker: Failed to add file %wZ, status: 0x%08x\n", &userFilePath, status);
+                DEBUG("driverFlt: Failed to add file %wZ, status: 0x%08x\n", &userFilePath, status);
             }
         }
         else {
             status = STATUS_INVALID_PARAMETER;
-            DbgPrint("FileTracker: Invalid parameter in IOCTL\n");
+            DEBUG("driverFlt: Invalid parameter in IOCTL\n");
         }
     }
     else {
         status = STATUS_INVALID_PARAMETER;
-        DbgPrint("FileTracker: No input buffer or invalid length\n");
+        DEBUG("driverFlt: No input buffer or invalid length\n");
     }
 
     return status;
@@ -64,10 +65,10 @@ static NTSTATUS IoctlRemoveFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
         if (userFilePath.Length > 0 && userFilePath.Length <= inputBufferLength) {
             status = RemoveTrackedFile(&TrackedFiles, userFilePath.Buffer);
             if (NT_SUCCESS(status)) {
-                DbgPrint("FileTracker: Successfully removed file %wZ\n", &userFilePath);
+                DEBUG("driverFlt: Successfully removed file %wZ\n", &userFilePath);
             }
             else {
-                DbgPrint("FileTracker: Failed to remove file %wZ, status: 0x%08x\n", &userFilePath, status);
+                DEBUG("driverFlt: Failed to remove file %wZ, status: 0x%08x\n", &userFilePath, status);
             }
         }
         else {
@@ -101,7 +102,7 @@ static NTSTATUS IoctlGetDelMsg(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
     }
     else {
         status = STATUS_BUFFER_TOO_SMALL;
-        DbgPrint("FileTracker: Buffer too small for IOCTL_GET_DELETE_MESSAGE, provided: %lu, required: %lu\n",
+        DEBUG("driverFlt: Buffer too small for IOCTL_GET_DELETE_MESSAGE, provided: %lu, required: %lu\n",
             outputBufferLength, sizeof(DELETE_MESSAGE));
         Irp->IoStatus.Information = 0;
     }
@@ -131,7 +132,7 @@ NTSTATUS IoctlControl(
     }
     else {
         status = STATUS_INVALID_DEVICE_REQUEST;
-        DbgPrint("FileTracker: Unknown IOCTL code\n");
+        DEBUG("driverFlt: Unknown IOCTL code\n");
     }
 
     Irp->IoStatus.Status = status;
@@ -146,7 +147,7 @@ NTSTATUS IoctlCreateDispatch(
 )
 {
     UNREFERENCED_PARAMETER(DeviceObject);
-    DbgPrint("FileTracker: IRP_MJ_CREATE received\n");
+    DEBUG("driverFlt: IRP_MJ_CREATE received\n");
 
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;

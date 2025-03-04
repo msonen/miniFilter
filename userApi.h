@@ -8,8 +8,8 @@
 #define IOCTL_REMOVE_TRACKED_FILE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_GET_DELETE_MESSAGE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
 // Device name and symbolic link
-#define DEVICE_NAME L"\\Device\\FileTracker"
-#define SYMLINK_NAME L"\\DosDevices\\FileTracker"
+#define DEVICE_NAME L"\\Device\\driverFlt"
+#define SYMLINK_NAME L"\\DosDevices\\driverFlt"
 
 
 
