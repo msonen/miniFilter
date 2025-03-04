@@ -39,11 +39,16 @@ IoctlAddFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
         }
         RtlInitUnicodeString(&userFilePath, buffer);
         if (userFilePath.Length > 0 && userFilePath.Length <= inputBufferLength) {
-            status = AddTrackedFile(&TrackedFiles, userFilePath.Buffer, protected);
-            if (NT_SUCCESS(status)) {
-                LOG("driverFlt: Successfully added file %wZ, Protected: %d\n", &userFilePath, protected);
-            } else {
-                LOG("driverFlt: Failed to add file %wZ, status: 0x%08x\n", &userFilePath, status);
+            if(!GetTrackedFile(&TrackedFiles, &userFilePath, NULL, NULL)){
+                status = AddTrackedFile(&TrackedFiles, userFilePath.Buffer, protected);
+                if (NT_SUCCESS(status)) {
+                    LOG("driverFlt: Successfully added file %wZ, Protected: %d\n", &userFilePath, protected);
+                } else {
+                    LOG("driverFlt: Failed to add file %wZ, status: 0x%08x\n", &userFilePath, status);
+                }
+            }
+            else {
+                status = STATUS_ALREADY_REGISTERED;
             }
         } else {
             status = STATUS_INVALID_PARAMETER;
