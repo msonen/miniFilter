@@ -6,7 +6,6 @@
 #include "circularQ.h"
 #include "debug.h"
 
-#define MAX_MESSAGES 10 // Circular queue size
 
 #pragma pack(push, 1) // Ensure tight packing
 typedef struct _DELETE_MESSAGE {
@@ -22,7 +21,8 @@ extern TRACKED_FILES TrackedFiles;
 extern PDEVICE_OBJECT gDeviceObject;
 static CIRCULAR_QUEUE MessageQueue;
 
-static NTSTATUS IoctlAddFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
+static NTSTATUS 
+IoctlAddFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
 {
     PVOID inputBuffer = Irp->AssociatedIrp.SystemBuffer;
     ULONG inputBufferLength = irpSp->Parameters.DeviceIoControl.InputBufferLength;
@@ -53,7 +53,8 @@ static NTSTATUS IoctlAddFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
     return status;
 }
 
-static NTSTATUS IoctlRemoveFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
+static NTSTATUS 
+IoctlRemoveFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
 {
     PVOID inputBuffer = Irp->AssociatedIrp.SystemBuffer;
     ULONG inputBufferLength = irpSp->Parameters.DeviceIoControl.InputBufferLength;
@@ -83,7 +84,8 @@ static NTSTATUS IoctlRemoveFile(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
 }
 
 
-static NTSTATUS IoctlGetDelMsg(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
+static NTSTATUS 
+IoctlGetDelMsg(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
 {
     PVOID outputBuffer = Irp->AssociatedIrp.SystemBuffer;
     ULONG outputBufferLength = irpSp->Parameters.DeviceIoControl.OutputBufferLength;
@@ -111,7 +113,8 @@ static NTSTATUS IoctlGetDelMsg(_In_ PIRP Irp, PIO_STACK_LOCATION irpSp)
 }
 
 // IOCTL handler
-NTSTATUS IoctlControl(
+NTSTATUS 
+IoctlControl(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp
 )
@@ -141,7 +144,8 @@ NTSTATUS IoctlControl(
 }
 
 // Handle IRP_MJ_CREATE
-NTSTATUS IoctlCreateDispatch(
+NTSTATUS 
+IoctlCreateDispatch(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP Irp
 )
@@ -155,7 +159,8 @@ NTSTATUS IoctlCreateDispatch(
     return STATUS_SUCCESS;
 }
 
-NTSTATUS IoctlInit() 
+NTSTATUS 
+IoctlInit() 
 {
     // Initialize delete event
     return InitializeQueue(&MessageQueue, sizeof(DELETE_MESSAGE), MAX_MESSAGES);
